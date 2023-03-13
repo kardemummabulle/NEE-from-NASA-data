@@ -5,7 +5,7 @@ lapply(libs,require,character.only=T)
 # Import NASA H5 files (January). Check which dataset is NEE
 setwd("D:/PhD_files/NASA/January/Input")
 
-# It is number 17: /nee_mean)
+# It is number 17: /nee_mean
 (sds <- get_subdatasets('SMAP_L4_C_mdl_20160101T000000_Vv4040_001.h5'))
 
 # Function to read h5 files and rescale them (rescale them from EASE Global Grid to WGS84)
