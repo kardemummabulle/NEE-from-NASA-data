@@ -1,0 +1,221 @@
+# Load R packages
+libs <- c('maptools','raster','sp','rgdal','RStoolbox','sf','ggplot2','gplots','rasterVis','gdalUtils')
+lapply(libs,require,character.only=T)
+
+# Import NASA H5 files (January). Check which dataset is NEE
+setwd("D:/PhD_files/NASA/January/Input")
+
+# It is number 17: /nee_mean)
+(sds <- get_subdatasets('SMAP_L4_C_mdl_20160101T000000_Vv4040_001.h5'))
+
+# Function to read h5 files and rescale them (rescale them from EASE Global Grid to WGS84)
+extrH5GTiff=function(loc,h5s,gtiffs,lyr){ 
+  if("gdalUtils"%in%rownames(installed.packages())==FALSE){
+    install.packages("gdalUtils",repos="http://r-forge.r-project.org")
+    require(gdalUtils)
+  } # install and load the gdalUtils package 
+  setwd(loc) # set the working directory to where the data is
+  suppressWarnings(dir.create(paste(loc,"Extracted",sep="/"))) # create a directory to store files
+  for (i in 1:length(h5s)){ 
+    gdal_translate(h5s[i],gtiffs[i],sd_index=lyr, # extract the specified h5 layer and save it as a Geotiff
+                   a_ullr=c(-17367530.45,7314540.11,17367530.45,-7314540.11), # EASE Global Grid
+                   a_srs="+proj=cea +lon_0=0 +lat_ts=30 +ellps=WGS84 +units=m", # to WGS84
+                   a_nodata=-9999) # no data values
+    gdalwarp(gtiffs[i],paste(loc,"Extracted",gtiffs[i],sep="/"),overwrite=T) # store geotiffs in a folder
+    unlink(gtiffs[i]) # delete geotiffs to save space
+  }
+}
+
+# Load variables
+setwd("D:/PhD_files/NASA/January/Input")
+myloc="D:/PhD_files/NASA/January/Input"
+h5s1=list.files(getwd(),pattern=".h5$") # h5 file list
+gtiffs1=gsub("h5","tif",h5s1) # out GeoTIFF file list
+
+# Execute the function
+extrH5GTiff(loc=myloc,h5s=h5s1,gtiffs=gtiffs1,lyr=17) # lyr is h5 layer to be extracted: 17 for mean NEE, 26 for sd NEE
+rm(myloc,h5s1,gtiffs1) # remove variables to save memory
+
+# Check
+Jan_20160101 <- raster("D:/PhD_files/NASA/January/Input/Extracted/SMAP_L4_C_mdl_20160101T000000_Vv4040_001.tif")
+plot(Jan_20160101)
+
+# Import extracted tiffs
+setwd("D:/PhD_files/NASA/January/Input/Extracted")
+tiff <- list.files(path=getwd(),pattern="*.tif$|*.TIF$")
+
+# Make raster stack
+tiffs_stack <- stack(tiff)
+
+# Save tiffs
+setwd("D:/PhD_files/NASA/January/Output")
+for (i in 1:length(tiffs_stack)) {
+  writeRaster(tiffs_stack[[i]],names(tiffs_stack[[i]]),format='GTiff')
+}
+
+# Reproject, clip to a polygon and save
+shp <- readOGR("D:/PhD_files/NASA/area.shp")
+shp_proj <- spTransform(shp,crs(Jan_20160101))
+
+# Check
+plot(Jan_20160101)
+plot(shp_proj,add=T)
+
+# Lets do it on all files now
+setwd("D:/PhD_files/NASA/January/Output")
+tiff <- list.files(path=getwd(),pattern="*.tif$|*.TIF$")
+
+# Make raster stack
+tiffs_stack <- stack(tiff)
+plot(tiffs_stack[[1]]) # looks good
+
+tiffs_stack.sub <- crop(tiffs_stack,extent(shp_proj))
+tiffs_stack.sub <- mask(tiffs_stack.sub,shp_proj)
+plot(tiffs_stack.sub[[1]])
+plot(shp_proj,add=T)
+plot(tiffs_stack.sub)
+
+# Save cropped tiffs
+setwd("D:/PhD_files/NASA/January/Crop")
+for (i in 1:length(tiffs_stack.sub)) {
+  writeRaster(tiffs_stack.sub[[i]],names(tiffs_stack.sub[[i]]),format='GTiff')
+}
+
+# Import the cropped tiffs and calculate stats
+setwd("D:/PhD_files/NASA/January/Crop")
+tiff <- list.files(path=getwd(),pattern="*.tif$|*.TIF$")
+
+# Make raster stack
+tiffs_stack <- stack(tiff)
+
+# Extract cell stats for each raster and make a dataframe
+(jan <- data.frame(NEE_mean_gC_m2_d1=cellStats(tiffs_stack,"mean")))
+(jan <- cbind(jan,(data.frame(NEE_sum_gC_m2_d1=cellStats(tiffs_stack,"sum")))))
+
+# Calculate for entire area
+(jan$NEE_sum_gC_d1 <- jan$NEE_sum_gC_m2_d1*(9008.055^2)) # sum of NEE for each day times raster resolution
+(jan$NEE_sum_PgC_d1 <- jan$NEE_sum_gC_d1*1e-15)
+
+# Check
+sum(jan$NEE_sum_PgC_d1) # makes sense
+
+# Add column with date
+(Date=seq(from=as.Date("2016-01-01"),to=as.Date("2016-01-31"),by=1))
+(jan <- cbind(jan,Date))
+
+# Write the dataframe
+write.csv2(jan,file="D:/PhD_files/NASA/January/jan_mean.csv")
+
+
+
+
+# Now the same thing but with sd NEE
+# Import NASA H5 files (January). Check which dataset is NEE
+setwd("D:/PhD_files/NASA/January/Input")
+
+# It is number 26: /nee_sd)
+(sds <- get_subdatasets('SMAP_L4_C_mdl_20160101T000000_Vv4040_001.h5'))
+
+# Function to read h5 files and rescale them (rescale them from EASE Global Grid to WGS84)
+extrH5GTiff_sd=function(loc,h5s,gtiffs,lyr){ 
+  if("gdalUtils"%in%rownames(installed.packages())==FALSE){
+    install.packages("gdalUtils",repos="http://r-forge.r-project.org")
+    require(gdalUtils)
+  } # install and load the gdalUtils package 
+  setwd(loc) # set the working directory to where the data is
+  suppressWarnings(dir.create(paste(loc,"Extracted_sd",sep="/"))) # create a directory to store files
+  for (i in 1:length(h5s)){ 
+    gdal_translate(h5s[i],gtiffs[i],sd_index=lyr, # extract the specified h5 layer and save it as a Geotiff
+                   a_ullr=c(-17367530.45,7314540.11,17367530.45,-7314540.11), # EASE Global Grid
+                   a_srs="+proj=cea +lon_0=0 +lat_ts=30 +ellps=WGS84 +units=m", # to WGS84
+                   a_nodata=-9999) # no data values
+    gdalwarp(gtiffs[i],paste(loc,"Extracted_sd",gtiffs[i],sep="/"),overwrite=T) # store geotiffs in a folder
+    unlink(gtiffs[i]) # delete geotiffs to save space
+  }
+}
+
+# Load variables
+setwd("D:/PhD_files/NASA/January/Input")
+myloc="D:/PhD_files/NASA/January/Input" # working directory
+h5s1=list.files(getwd(),pattern=".h5$") # h5 file list
+gtiffs1=gsub("h5","tif",h5s1) # out GeoTIFF file list
+
+# Execute the function
+extrH5GTiff_sd(loc=myloc,h5s=h5s1,gtiffs=gtiffs1,lyr=26) # lyr is h5 layer to be extracted: 17 for mean NEE, 26 for sd NEE
+rm(myloc,h5s1,gtiffs1) # remove variables to save memory
+
+# Check
+Jan_20160101 <- raster("D:/PhD_files/NASA/January/Input/Extracted_sd/SMAP_L4_C_mdl_20160101T000000_Vv4040_001.tif")
+plot(Jan_20160101)
+
+# Import extracted tiffs
+setwd("D:/PhD_files/NASA/January/Input/Extracted_sd")
+tiff <- list.files(path=getwd(),pattern="*.tif$|*.TIF$")
+
+# Make raster stack
+tiffs_stack <- stack(tiff)
+
+# Save tiffs
+setwd("D:/PhD_files/NASA/January/Output_sd")
+for (i in 1:length(tiffs_stack)) {
+  writeRaster(tiffs_stack[[i]],names(tiffs_stack[[i]]),format='GTiff')
+}
+
+# Reproject, clip to area and save
+Jan_20160101 <- raster("D:/PhD_files/NASA/January/Output_sd/SMAP_L4_C_mdl_20160101T000000_Vv4040_001.tif")
+plot(Jan_20160101)
+shp_proj <- spTransform(shp,crs(Jan_20160101))
+plot(Jan_20160101)
+plot(shp_proj,add=T)
+
+# Crop and mask
+Jan_20160101_sub <- crop(Jan_20160101,extent(shp_proj))
+Jan_20160101_sub <- mask(Jan_20160101_sub,shp_proj)
+plot(Jan_20160101_sub)
+plot(shp_proj,add=T)
+
+# Lets do it on all files now
+setwd("D:/PhD_files/NASA/January/Output_sd")
+tiff <- list.files(path=getwd(),pattern="*.tif$|*.TIF$")
+
+# Make raster stack
+tiffs_stack <- stack(tiff)
+plot(tiffs_stack[[1]]) # looks good
+
+tiffs_stack.sub <- crop(tiffs_stack,extent(shp_proj))
+tiffs_stack.sub <- mask(tiffs_stack.sub,shp_proj)
+plot(tiffs_stack.sub[[1]])
+plot(shp_proj,add=T)
+plot(tiffs_stack.sub)
+
+# Save cropped tiffs
+setwd("D:/PhD_files/NASA/January/Crop_sd")
+for (i in 1:length(tiffs_stack.sub)) {
+  writeRaster(tiffs_stack.sub[[i]],names(tiffs_stack.sub[[i]]),format='GTiff')
+}
+
+# Import the cropped tiffs and calculate stats
+setwd("D:/PhD_files/NASA/January/Crop_sd")
+tiff <- list.files(path=getwd(),pattern="*.tif$|*.TIF$")
+
+# Make raster stack
+tiffs_stack <- stack(tiff)
+plot(tiffs_stack[[1]]) # looks good
+plot(tiffs_stack)
+
+# Extract cell stats for each raster and make a dataframe
+(jan_sd <- data.frame(NEE_sd_gC_m2_d1=cellStats(tiffs_stack,"mean")))
+
+# Add column with date
+(Date=seq(from=as.Date("2016-01-01"),to=as.Date("2016-01-31"),by=1))
+(jan_sd <- cbind(jan_sd,Date))
+
+# Write the dataframe
+write.csv2(jan_sd,file="D:/PhD_files/NASA/January/jan_sd.csv")
+
+# And then merge two datasets together
+(sd <- subset(jan_sd,select=c("NEE_sd_gC_m2_d1")))
+(jan <- cbind(jan,sd))
+write.csv2(jan,file="D:/PhD_files/NASA/January/jan_mean_sd.csv")
+
+# Now we are good.
