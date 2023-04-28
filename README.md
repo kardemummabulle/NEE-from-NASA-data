@@ -1,4 +1,4 @@
-# NEE-from-NASA-data
+# NEE-from-NASA-data.
 
 This R script was developed and used for paper in Nature Communications: Karlsson, J., Serikova, S., Vorobyev, S.N. et al. Carbon emission from Western Siberian inland waters. Nat Commun 12, 825 (2021). https://doi.org/10.1038/s41467-021-21054-1
 
